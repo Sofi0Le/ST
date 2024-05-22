@@ -6,13 +6,19 @@ import requests
 from django.http import HttpResponse
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from rest_framework import status
-
 
 P = 0.11  # вероятность ошибки
 R = 0.01  # вероятность потери кадра
 g = '10011'
 err_table = ['0001', '0010', '0100', '1000', '0011', '0110', '1100', '1011', '0101', '1010', '0111', '1110', '1111', '1101', '1001']
+
+
+def bits_to_bytes(bit_data):
+    bytes_data = b""
+    for i in range(0, len(bit_data), 8):
+        byte = bit_data[i:i+8]
+        bytes_data += bytes([int(byte, 2)])
+    return bytes_data
 
 def bin_dev(arg_first, arg_second):
     arg_first_int = int(arg_first, 2)
@@ -20,7 +26,6 @@ def bin_dev(arg_first, arg_second):
     a = bin(arg_first_int)[2:]
     b = bin(arg_second_int)[2:]
     len_dif = len(a) - len(b)
-    result = ''
     if len_dif > 0:
         res_str = ''
         devisible_int = int(a[0:len(b)], 2)
@@ -77,11 +82,14 @@ def encode(message):
         p = bin_dev(m, g)
         v = bin_sum(m, p)
         res_message += ''.join(v)
-    print(f"enc: {res_message=}")
+    print(f"Закодировано в битах: {res_message=}")
     return res_message
 
 def make_error(message):
-    if random.random() < P:
+    rand = random.random()
+    print(f"random={rand}")
+    if rand < P:
+        print(f"***********************Ошибка внесена!!!!!!*******************")
         error_pos = random.randrange(0, len(message))
         pos = len(message) - 1 - error_pos
         message = message[:pos] + str(int(message[pos]) ^ 1) + message[pos + 1:]
@@ -100,7 +108,7 @@ def decode(message):
             new_r = r
         new_r = str(new_r[:-4])
         res_message += ''.join(new_r)
-    print(f"dec: {res_message=}")
+    print(f"Декодировано в битах: {res_message=}")
     return res_message
 
 @api_view(['POST'])
@@ -114,48 +122,52 @@ def code(request):
     error_fg = False
 
     # Кодирование
-    len_mes = len(message)
-    encoded_message = encode(message)
+    print(f"Оригинальное сообщение: {message}")
+    message_byte = message.encode('utf-8')
+    print(f"Оригинальное сообщение в байтах: {message_byte}")
+    message_bit = ''.join(format(byte, '08b') for byte in message_byte)
+    print(f"Оригинальное сообщение в битах: {message_bit}")
+    len_mes = len(message_bit)
+    encoded_message = encode(message_bit)
+    print(f"Закодировано в байтах: {bits_to_bytes(encoded_message)}")
         
     # Внесение ошибок
     corrupted_message = make_error(encoded_message)
+    print(f"После внесения ошибки в байтах: {bits_to_bytes(corrupted_message)}")
         
     # Потеря сообщения
     if random.random() < R:
         decoded_message = ''
         error_fg = True
+        print("Сообщение потеряно!!!!!")
     else:
         decoded_message = decode(corrupted_message)
         len_dec_mes = len(decoded_message)
         l = len_dec_mes - len_mes
-        print(l)
+        #print(l)
         decoded_message = str(decoded_message[l:])
-        print(f"dec1: {decoded_message=}")
-    print(f"dec2: {decoded_message=}")  
-    if decoded_message != message:
+        print(f"Докодировано в битах: {decoded_message=}") 
+    if decoded_message != message_bit:
         decoded_message = ''
         error_fg = True
-  
+    else:
+        byte_decoded_message = bits_to_bytes(decoded_message)
+        print(f"Декодировано в байтах:{byte_decoded_message}")
+        str_decoded_message = byte_decoded_message.decode('utf-8')
+        print(f"Сообщение для отправки на транспортный уровень:{str_decoded_message}")
 
-    # Отправка на транспортный уровень
-    transfer_data = {
-        "sender": sender,
-        "part_message_id": part_message_id,
-        "timestamp": timestamp,
-        "message": decoded_message,
-        "amount_segments": amount_segments,
-    }
     if not error_fg:
-        response = requests.post('http://158.160.87.211:8888/transfer/', json=transfer_data)
+        # Отправка на транспортный уровень
+        transfer_data = {
+            "sender": sender,
+            "part_message_id": part_message_id,
+            "timestamp": timestamp,
+            "message": str_decoded_message,
+            "amount_segments": amount_segments,
+        }
+        response = requests.post('http://25.59.65.80:8888/transfer/', json=transfer_data)
         if response.status_code == 200:
             return HttpResponse(status=200)
         #return HttpResponse(status=404)
     else:
-        print('LOST!!!!')
-    '''
-    response_data = {
-        "status": "ok",
-        "data": transfer_data
-    }
-
-    return Response(response_data, status=status.HTTP_200_OK)'''
+        print('ПОТЕРЯ!!!!')
