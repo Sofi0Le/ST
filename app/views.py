@@ -1,5 +1,3 @@
-# channel_layer/views.py
-
 import random
 import json
 import requests
@@ -11,7 +9,6 @@ P = 0.11  # вероятность ошибки
 R = 0.01  # вероятность потери кадра
 g = '10011'
 err_table = ['0001', '0010', '0100', '1000', '0011', '0110', '1100', '1011', '0101', '1010', '0111', '1110', '1111', '1101', '1001']
-
 
 def bits_to_bytes(bit_data):
     bytes_data = b""
@@ -114,6 +111,7 @@ def decode(message):
 @api_view(['POST'])
 def code(request):
     data = request.data
+    print(f"{data=}")
     sender = data.get('login')
     part_message_id = data.get('part_message_id')
     timestamp = data.get('timestamp')
@@ -121,12 +119,15 @@ def code(request):
     amount_segments = data.get('amount_segments')
     error_fg = False
 
-    # Кодирование
-    print(f"Оригинальное сообщение: {message}")
-    message_byte = message.encode('utf-8')
+    # Преобразование строки байтов обратно в байты
+    message_byte = eval(message)
+    print(f"Оригинальное сообщение: {message_byte}")
     print(f"Оригинальное сообщение в байтах: {message_byte}")
+
+    # Перевод байтов в биты
     message_bit = ''.join(format(byte, '08b') for byte in message_byte)
     print(f"Оригинальное сообщение в битах: {message_bit}")
+    
     len_mes = len(message_bit)
     encoded_message = encode(message_bit)
     print(f"Закодировано в байтах: {bits_to_bytes(encoded_message)}")
@@ -144,7 +145,6 @@ def code(request):
         decoded_message = decode(corrupted_message)
         len_dec_mes = len(decoded_message)
         l = len_dec_mes - len_mes
-        #print(l)
         decoded_message = str(decoded_message[l:])
         print(f"Докодировано в битах: {decoded_message=}") 
     if decoded_message != message_bit:
@@ -152,9 +152,10 @@ def code(request):
         error_fg = True
     else:
         byte_decoded_message = bits_to_bytes(decoded_message)
-        print(f"Декодировано в байтах:{byte_decoded_message}")
-        str_decoded_message = byte_decoded_message.decode('utf-8')
-        print(f"Сообщение для отправки на транспортный уровень:{str_decoded_message}")
+        print(f"Декодировано в байтах: {byte_decoded_message}")
+        new_byte_decoded_message = byte_decoded_message.decode('utf-8', errors='replace')
+        #str_decoded_message = byte_decoded_message.decode('utf-8')
+        #print(f"Сообщение для отправки на транспортный уровень: {str_decoded_message}")
 
     if not error_fg:
         # Отправка на транспортный уровень
@@ -162,12 +163,12 @@ def code(request):
             "sender": sender,
             "part_message_id": part_message_id,
             "timestamp": timestamp,
-            "message": str_decoded_message,
+            "message": new_byte_decoded_message,
             "amount_segments": amount_segments,
         }
         response = requests.post('http://25.59.65.80:8888/transfer/', json=transfer_data)
         if response.status_code == 200:
             return HttpResponse(status=200)
-        #return HttpResponse(status=404)
     else:
         print('ПОТЕРЯ!!!!')
+        #return HttpResponse(status=400)
